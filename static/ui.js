@@ -1751,6 +1751,7 @@ async function toggleModelDropdown(){
 
 function closeModelDropdown(){
   const dd=$('composerModelDropdown');
+  if (dd && dd.querySelector('input:focus')) return;
   const chip=$('composerModelChip');
   const mobileAction=$('composerMobileModelAction');
   if(dd) dd.classList.remove('open');
