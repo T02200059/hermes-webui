@@ -3065,7 +3065,7 @@ main.main.showing-logs > #mainLogs{display:flex;}
 .panel-view#panelSettings{gap:0;padding:0;}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:41px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;flex-shrink:0;}
 .panel-head-actions{display:flex;align-items:center;gap:4px;text-transform:none;letter-spacing:normal;}
-.panel-head-btn{width:24px;height:24px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:6px;color:var(--muted);cursor:pointer;transition:background .15s,color .15s;flex-shrink:0;}
+.panel-head-btn{min-width:36px;min-height:36px;padding:6px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:6px;color:var(--muted);cursor:pointer;transition:background .15s,color .15s;flex-shrink:0;}
 .panel-head-btn:hover{background:var(--accent-bg);color:var(--accent-text);}
 .panel-head-btn:disabled,.panel-head-btn[aria-busy="true"]{opacity:.5;cursor:wait;}
 .panel-head-btn:disabled:hover,.panel-head-btn[aria-busy="true"]:hover{background:transparent;color:var(--muted);}
