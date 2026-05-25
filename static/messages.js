@@ -413,6 +413,45 @@ async function send(){
       }
     }
     if(_parsedCmd&&!_cmd){
+      // Check quick_commands from config.yaml before falling through to agent
+      const _qcmds=typeof _loadQuickCommands==='function' ? await _loadQuickCommands() : {};
+      const _qcmd=_qcmds&&_qcmds[_parsedCmd.name];
+      if(_qcmd){
+        if(!S.session){await newSession();await renderSessionList();}
+        if(_qcmd.type==='alias'){
+          // Expand alias: rewrite input and re-dispatch
+          let _target=(_qcmd.target||'').trim();
+          if(!_target.startsWith('/')) _target='/'+_target;
+          const _userArgs=_parsedCmd.args||'';
+          const _expanded=_target+(_userArgs?' '+_userArgs:'');
+          $('msg').value='';autoResize();
+          _sendInProgress=false;_sendInProgressSid=null;
+          // Set expanded text for re-dispatch — send() will handle echo properly
+          $('msg').value=_expanded;autoResize();
+          await send();
+          return;
+        }
+        if(_qcmd.type==='exec'){
+          S.messages.push({role:'user',content:text,_ts:Date.now()/1000});
+          renderMessages();
+          let _qcOutput='(no output)';
+          try{
+            const _resp=await fetch('/api/quick-commands/exec',{
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({name:_parsedCmd.name})
+            });
+            const _data=_resp.ok ? await _resp.json() : {};
+            _qcOutput=_data.output||'(no output)';
+          }catch(e){
+            _qcOutput=`Quick command error: ${e&&e.message||e}`;
+          }
+          S.messages.push({role:'assistant',content:String(_qcOutput),_ts:Date.now()/1000});
+          renderMessages();
+          $('msg').value='';autoResize();hideCmdDropdown();return;
+        }
+        // Unknown type: fall through to normal send
+      }
       const _agentCmd=typeof getAgentCommandMetadata==='function'
         ? await getAgentCommandMetadata(_parsedCmd.name)
         : null;

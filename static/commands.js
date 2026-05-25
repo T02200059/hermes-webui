@@ -91,6 +91,18 @@ function getMatchingCommands(prefix){
     });
     seen.add(name);
   }
+  // Quick commands from config.yaml
+  for(const [qcName,qc] of Object.entries(_quickCommandsCache||{})){
+    if(!qcName.startsWith(q)||seen.has(qcName))continue;
+    const qType=qc&&qc.type||'';
+    const qDesc=qc&&(qc.desc||qc.target||'')||'quick command';
+    matches.push({
+      name:qcName,
+      desc:`⚡ ${qDesc}`.slice(0,60),
+      source:qType==='exec'?'quick-exec':'quick-alias',
+    });
+    seen.add(qcName);
+  }
   return matches;
 }
 
@@ -100,6 +112,8 @@ let _slashPersonalityCache=null;
 let _slashPersonalityCachePromise=null;
 let _agentCommandCache=null;
 let _agentCommandCachePromise=null;
+let _quickCommandsCache=null;
+let _quickCommandsPromise=null;
 
 // Invalidate the /api/models slash-suggestion cache. Called by panels.js
 // after a provider is added or removed so the next /model autocomplete
@@ -230,6 +244,23 @@ async function getAgentCommandMetadata(name){
     if(String(cmd&&cmd.name||'').toLowerCase()===needle) return true;
     return Array.isArray(cmd&&cmd.aliases)&&cmd.aliases.some(a=>String(a||'').toLowerCase()===needle);
   })||null;
+}
+
+async function _loadQuickCommands(){
+  if(_quickCommandsCache) return _quickCommandsCache;
+  if(_quickCommandsPromise) return _quickCommandsPromise;
+  _quickCommandsPromise=(async()=>{
+    try{
+      const data=await api('/api/quick-commands');
+      _quickCommandsCache=(data&&data.quick_commands)||{};
+    }catch(_){
+      _quickCommandsCache={};
+    }finally{
+      _quickCommandsPromise=null;
+    }
+    return _quickCommandsCache;
+  })();
+  return _quickCommandsPromise;
 }
 
 function cliOnlyCommandResponse(cmdName, meta){
@@ -1315,6 +1346,10 @@ function ensureSkillCommandsLoadedForAutocomplete(){
   // Also preload agent/plugin command metadata for autocomplete
   if(!_agentCommandCacheReady&&!_agentCommandCachePromise){
     loadAgentCommandMetadata().then(()=>{refreshSlashCommandDropdown();});
+  }
+  // Preload quick_commands from config.yaml
+  if(!_quickCommandsCache&&!_quickCommandsPromise){
+    _loadQuickCommands().then(()=>{refreshSlashCommandDropdown();});
   }
 }
 

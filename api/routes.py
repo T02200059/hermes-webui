@@ -4841,6 +4841,22 @@ def handle_get(handler, parsed) -> bool:
         from api.commands import list_commands
         return j(handler, {"commands": list_commands()})
 
+    if parsed.path == "/api/quick-commands":
+        raw = _load_yaml_config_file(_get_config_path())
+        qcmds = raw.get("quick_commands", {}) or {}
+        if not isinstance(qcmds, dict):
+            qcmds = {}
+        safe = {}
+        for k, v in qcmds.items():
+            if isinstance(v, dict):
+                entry = {"type": v.get("type", "")}
+                if v.get("type") == "alias":
+                    entry["target"] = v.get("target", "")
+                elif v.get("type") == "exec":
+                    entry["desc"] = v.get("command", "")[:80]
+                safe[k] = entry
+        return j(handler, {"quick_commands": safe})
+
     if parsed.path == "/api/updates/check":
         settings = load_settings()
         if not settings.get("check_for_updates", True):
@@ -6214,6 +6230,34 @@ def handle_post(handler, parsed) -> bool:
             return bad(handler, "Plugin command not found", 404)
         except RuntimeError as e:
             return bad(handler, _sanitize_error(e), 500)
+
+    if parsed.path == "/api/quick-commands/exec":
+        name = str(body.get("name", "") or "").strip()
+        if not name:
+            return bad(handler, "name is required")
+        raw = _load_yaml_config_file(_get_config_path())
+        qcmds = raw.get("quick_commands", {}) or {}
+        if not isinstance(qcmds, dict):
+            return bad(handler, f"Quick command '{name}' not found", 404)
+        qcmd = qcmds.get(name)
+        if not qcmd or not isinstance(qcmd, dict) or qcmd.get("type") != "exec":
+            return bad(handler, f"Quick command '{name}' not found or not exec type", 404)
+        exec_cmd = qcmd.get("command", "")
+        if not exec_cmd:
+            return bad(handler, f"Quick command '{name}' has no command defined")
+        try:
+            result = subprocess.run(
+                exec_cmd, shell=True, capture_output=True,
+                text=True, timeout=30
+            )
+            output = result.stdout.strip() or result.stderr.strip()
+            if result.returncode != 0 and not output:
+                output = f"(exit code {result.returncode})"
+            return j(handler, {"output": output or "(no output)"})
+        except subprocess.TimeoutExpired:
+            return bad(handler, "Quick command timed out (30s)", 500)
+        except Exception as e:
+            return bad(handler, str(e), 500)
 
     # ── Skills (POST) ──
     if parsed.path == "/api/skills/save":
