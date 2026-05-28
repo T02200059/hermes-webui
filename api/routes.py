@@ -4032,6 +4032,17 @@ def handle_get(handler, parsed) -> bool:
                     cookie_val = parse_cookie(handler)
                     if cookie_val and verify_session(cookie_val):
                         csrf_token = csrf_token_for_session(cookie_val) or ""
+                    else:
+                        # Auth is enabled but session is missing/expired.
+                        # Redirect to login instead of serving a shell with an
+                        # empty CSRF token (which causes a 403 loop on POST).
+                        from urllib.parse import quote as _quote
+                        _next = _quote(parsed.path)
+                        handler.send_response(302)
+                        handler.send_header("Location", f"/login?next={_next}")
+                        handler.send_header("Content-Length", "0")
+                        handler.end_headers()
+                        return True
             except Exception:
                 csrf_token = ""
 
@@ -4098,6 +4109,15 @@ def handle_get(handler, parsed) -> bool:
             "passkeys_count": len(passkeys),
             "passkey_feature_flag": passkey_flag,
         })
+
+    if parsed.path == "/api/auth/csrf-token":
+        from api.auth import csrf_token_for_session, is_auth_enabled, parse_cookie, verify_session
+        csrf_token = ""
+        if is_auth_enabled():
+            cv = parse_cookie(handler)
+            if cv and verify_session(cv):
+                csrf_token = csrf_token_for_session(cv) or ""
+        return j(handler, {"csrf_token": csrf_token})
 
     if parsed.path in ("/manifest.json", "/manifest.webmanifest"):
         return _serve_manifest(handler)
@@ -5265,6 +5285,18 @@ def handle_post(handler, parsed) -> bool:
     if diag:
         diag.stage("csrf")
     if not _csrf_exempt_path(parsed.path) and not _check_csrf(handler):
+        # Drain the request body before sending the 403 response.
+        # On HTTP/1.1 keep-alive connections, failing to consume the
+        # Content-Length bytes leaves them in the socket buffer.  The
+        # next request on the same connection then sees those bytes as
+        # part of its request line, producing a garbled method like
+        # '{"workspace":...}GET' and a 501 from BaseHTTPRequestHandler.
+        try:
+            cl = int(handler.headers.get("Content-Length", 0))
+            if cl and cl > 0:
+                handler.rfile.read(min(cl, 1 << 20))  # drain up to 1 MB
+        except Exception:
+            pass
         try:
             return j(handler, {"error": _csrf_rejection_error(handler)}, status=403)
         finally:

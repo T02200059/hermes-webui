@@ -41,6 +41,24 @@ async function api(path,opts={}){
           // rather than showing raw JSON like {"error":"Profile 'x' does not exist."}
           let message=text;
           try{const j=JSON.parse(text);message=j.error||j.message||text;}catch(e){}
+          // Auto-recover from CSRF token mismatch: fetch a fresh token and retry once.
+          if(res.status===403 && /token_mismatch|Session expired/.test(message)){
+            try{
+              const tkRes=await fetch('api/auth/csrf-token',{credentials:'include'});
+              if(tkRes.ok){const tkData=await tkRes.json();if(tkData.csrf_token){
+                const cfg=window.__HERMES_CONFIG__||{};cfg.csrfToken=tkData.csrf_token;
+                window.__HERMES_CONFIG__=cfg;
+                const retryOpts={...fetchOpts};if(retryOpts.headers){const h=new Headers(retryOpts.headers);h.set('X-Hermes-CSRF-Token',tkData.csrf_token);retryOpts.headers=h;}
+                const retryRes=await fetch(url.href,{credentials:'include',headers:{'Content-Type':'application/json'},...retryOpts});
+                if(!retryRes.ok){const rt=await retryRes.text();let rm=rt;try{const rj=JSON.parse(rt);rm=rj.error||rj.message||rt;}catch(e){}const re=new Error(rm);re.status=retryRes.status;re.statusText=retryRes.statusText;re.body=rt;throw re;}
+                const rct=retryRes.headers.get('content-type')||'';return rct.includes('application/json')?await retryRes.json():await retryRes.text();
+              }else{
+                // csrf-token endpoint returned an empty token — the session is
+                // expired. Redirect to login instead of looping on 403.
+                window.location.href='login?next='+encodeURIComponent(window.location.pathname+window.location.search);return;
+              }}
+            }catch(_recoveryErr){/* fall through to original error */}
+          }
           // Attach the raw HTTP context so callers can branch on status (404 stale-session
           // cleanup, 401 redirect, 503 retry, etc.) without re-parsing the message string.
           const err=new Error(message);
